@@ -138,7 +138,7 @@ class Interferometer(object):
     
     def get_signal_snr(self):
 
-        SNR_squared=4*self.df*np.sum((np.abs(self.signal)**2/self.asd(self.freqs)**2))
+        SNR_squared=4*self.df*np.sum((np.abs(self.signal)**2/self.psd))
         SNR=np.sqrt(SNR_squared)
             
         return SNR
@@ -158,7 +158,7 @@ class Interferometer(object):
     def loglikelihood(self, model):
         """ calculates loglikelihood
         """    
-        return - 2 * self.df * np.sum(np.abs(self.strain - model)**2 / self.psd)
+        return - 2 * self.df * jnp.sum(jnp.abs(self.strain - model)**2 / self.psd)
     
     def h_inner_h_plus_d_inner_d(self, model):
         return np.sum((np.abs(model)**2 + np.abs(self.strain)**2) / self.psd) 

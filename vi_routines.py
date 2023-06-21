@@ -45,7 +45,7 @@ def make_flow_model(
 
     def bijector_fn(params: Array):
         return distrax.RationalQuadraticSpline(
-            params, range_min=-1., range_max=1.
+            params, range_min=0., range_max=1.
         )
 
     # Number of parameters for the rational-quadratic spline:
@@ -69,7 +69,8 @@ def make_flow_model(
     # We invert the flow so that the `forward` method is called with `log_prob`.
     flow = distrax.Inverse(distrax.Chain(layers))                                   #bijective transformation from base (normal) to parameter space 
     base_distribution = distrax.Independent(
-        distrax.Uniform(low=jnp.ones(event_shape)*-1, high=jnp.ones(event_shape)*1),
+        #distrax.Uniform(low=jnp.ones(event_shape)*-1, high=jnp.ones(event_shape)*1),
+        distrax.Uniform(low=jnp.zeros(event_shape), high=jnp.ones(event_shape)*1),
         #distrax.Normal(loc=jnp.zeros(event_shape), scale=jnp.ones(event_shape)),
         reinterpreted_batch_ndims=len(event_shape)
     )
