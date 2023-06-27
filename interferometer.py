@@ -29,6 +29,8 @@ class Interferometer(object):
         self.sensitivity = sensitivity
         self.laldetector = lal.cached_detector_by_prefix[self.name]
         self.seed=seed
+        self.tensor = self.laldetector.response
+        self.location = self.laldetector.location
         
         asd_data = np.genfromtxt('data/' + self.name + '_'+ self.sensitivity + '_strain.txt')
         self.asd = interp1d(asd_data[:, 0], asd_data[:, 1])
