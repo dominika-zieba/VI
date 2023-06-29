@@ -47,7 +47,7 @@ def project_to_detector(params, htup, freqs, detector, gmst):     #simulated str
     hp, hx = htup
     fp, fx = gwjax.antenna_pattern(detector, gmst,
                                     params['ra'], params['dec'], params['psi'])
-    cexp = jnp.exp(-1j*2*jnp.pi*freqs*deltat)
+    cexp = jnp.exp(-1j*2*jnp.pi*freqs*deltat)           ##frequency modulation
     m = (fp*hp + fx*hx)*cexp
     #print([x.shape for x in (fp,hp,fx,hx,cexp,m)])
     return m
