@@ -182,6 +182,8 @@ if __name__ == '__main__':
     gps = lal.LIGOTimeGPS(true_params['t0'])
     gmst_rad = lal.GreenwichMeanSiderealTime(gps)
 
+    hp, hc = simulate_fd_sine_gaussian_waveform(true_params['A'], true_params['t0'], true_params['f0'], true_params['tau'], H1.times, f_min, H1.df)
+
     L1.signal = L1_response(L1.freqs, hp, hc, true_params['ra'], true_params['dec'], gmst_rad, true_params['psi'])   
     H1.signal = H1_response(H1.freqs, hp, hc, true_params['ra'], true_params['dec'], gmst_rad, true_params['psi'])
 
@@ -213,7 +215,7 @@ if __name__ == '__main__':
     from tqdm import tqdm, trange
    
     ldict = dict(loss = [])
-    training_stats = dict(loss = [], mean_loss = np.inf)
+    training_stats = dict(loss = [], mean_loss = np.inf, fixed_flow_loss_variance=[], loss_variance=[])
 
     log_l = LogL(true_params)      
 
@@ -243,8 +245,24 @@ if __name__ == '__main__':
                 p_gen = np.vstack(list(log_l.array_to_phys(x_gen).values()))
                 data = np.concatenate([p_gen, [log_posterior]])
                 fig = corner.corner(data.T, labels=['A','ra','dec','psi', 'log_p'], truths = [0.5,0.5,0.5,0.5,0.])
-                pl.show()
-                pl.savefig(f'flow_${epoch}.png')
+                pl.savefig(f'results/{epochs}/flow_{epoch}.png')
+                pl.close()
+
+            #caculate variance from stochasticity alone
+            #if (epoch+1)%1000 == 0:
+            #    fixed_flow_loss = []
+            #    for iterations in range(500):
+            #        prng_key = next(prng_seq)
+            #        loss = loss_fn(params,  prng_key, Nsamps)
+            #        fixed_flow_loss.append(loss)
+
+            #    fixed_flow_loss_variance = np.var(fixed_flow_loss)
+            #    training_stats['fixed_flow_loss_variance'].append(fixed_flow_loss_variance)
+            #    loss_variance = np.var(training_stats['loss'][-500:])
+            #    training_stats['loss_variance'].append(loss_variance)
+            #    print(fixed_flow_loss_variance, loss_variance)
+            #    if loss_variance < fixed_flow_loss_variance:
+            #        break
 
             #if (epoch+1)%500 == 0:
                 #stopping criterion
@@ -260,11 +278,23 @@ if __name__ == '__main__':
     x_gen = np.array(x_gen, copy=False)
     p_gen = np.vstack(list(log_l.array_to_phys(x_gen).values()))
     fig = corner.corner(p_gen.T, truths = truths)
-    pl.show()
-    pl.savefig(f'posterior_${epochs}.png')
+    pl.savefig(f'results/{epochs}/posterior_{epochs}.png')
+    pl.close()
+
+    L=training_stats['loss'][:]
+    pl.plot(np.log(L[:]))
+    pl.xlabel("Iteration")
+    pl.ylabel("Log(loss)")
+    pl.savefig(f'results/{epochs}/logloss_{epochs}.png')
+    pl.close()
+
+    f = open(f'results/{epochs}/loss.npy', 'wb')
+    np.save(f,np.array(L))
+    f.close()
 
     f = open('samples_emcee_cosprior.npy', 'rb')
     samples = np.load(f)
+    f.close()
 
 
     kwargs = dict(
@@ -290,5 +320,5 @@ if __name__ == '__main__':
     kwargs["hist_kwargs"]["color"] = "C1"
     fig = corner.corner(p_gen.T, labels=log_l.params, truths = truths, fig=fig, **kwargs)
 
-    pl.show()
-    pl.savefig(f'posterior_comparison_${epochs}.png')
+    pl.savefig(f'results/{epochs}/posterior_comparison_{epochs}.png')
+    pl.close()

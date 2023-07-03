@@ -32,9 +32,9 @@ class Interferometer(object):
         self.tensor = self.laldetector.response
         self.location = self.laldetector.location
         
-        asd_data = np.genfromtxt('data/' + self.name + '_'+ self.sensitivity + '_strain.txt')
-        self.asd = interp1d(asd_data[:, 0], asd_data[:, 1])
-        self.f_max = asd_data[-1, 0]
+        #asd_data = np.genfromtxt('data/' + self.name + '_'+ self.sensitivity + '_strain.txt')
+        #self.asd = interp1d(asd_data[:, 0], asd_data[:, 1])
+        #self.f_max = asd_data[-1, 0]
         
         self.f_min = f_min
         self.T = T  #data segment duration
@@ -43,9 +43,9 @@ class Interferometer(object):
         self.Fn = Fs/2 #Nyquist frequency
         self.t_start = t_start #start time of the analyzed data segment for the detector 
         
-        self.noise = 0
-        self.signal = 0
-        self.strain = 0
+        self.noise = 0.
+        self.signal = 0.
+        self.strain = 0.
         
         #get the frequency array for the complex frequency series
         N = int(self.T*self.Fs) #number of time domain data points 
@@ -60,7 +60,8 @@ class Interferometer(object):
         start=np.where(freqs==self.f_min)[0][0]
         self.freqs=freqs[start:]
         
-        self.psd = self.asd(self.freqs)**2
+        #self.psd = self.asd(self.freqs)**2
+        self.psd = 1.
         
 
     def get_time_delay(self, ra, dec, t_gps):
