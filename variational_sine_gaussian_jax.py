@@ -29,21 +29,38 @@ from detector_projection import make_detector_response
 from jax.config import config
 config.update("jax_enable_x64", True)
 
+import sys
+
 
 #GW routines 
 
-def simulate_fd_sine_gaussian_waveform(A, t0, f0, tau, times, fmin, df):   #without phase for now
+#Simulate the sine-guassian waveform in time domain first, then fft to frequency domain
+#def simulate_fd_sine_gaussian_waveform(A, t0, f0, tau, times, fmin, df):   #without phase for now
     
-    t = times
+#    t = times
     
-    hpt = A*jnp.exp(-(t-t0)**2/tau**2)*jnp.cos(2*jnp.pi*f0*t) #time domain plus polarisation
-    hct = A*jnp.exp(-(t-t0)**2/tau**2)*jnp.sin(2*jnp.pi*f0*t) #time domain cross polarisation
+#    hpt = A*jnp.exp(-(t-t0)**2/tau**2)*jnp.cos(2*jnp.pi*f0*t) #time domain plus polarisation
+#    hct = A*jnp.exp(-(t-t0)**2/tau**2)*jnp.sin(2*jnp.pi*f0*t) #time domain cross polarisation
 
-    hp = jnp.fft.rfft(hpt) #frequency domain plus polarisation
-    hc = jnp.fft.rfft(hct) #frequency domain cross polarisation
+#    hp = jnp.fft.rfft(hpt) #frequency domain plus polarisation
+#    hc = jnp.fft.rfft(hct) #frequency domain cross polarisation
+
+#    return hp, hc
+
+#Simulate the fft of the sine-gaussian waveform directly
+def simulate_fd_sine_gaussian_waveform(A, t0, f0, tau, freqs, fmin, df):   #without phase for now
+
+    a = 1/(tau**2)
+    const = 1/2 * 1/H1.dt  
+
+    X = -2j*jnp.pi*(freqs-f0)*t0
+
+    hp = const * A * jnp.sqrt(jnp.pi / a) * jnp.exp(-(2*jnp.pi)**2*(freqs-f0)**2 / (4*a)) * jnp.exp(X)
+    hc = - 1j * const * A * jnp.sqrt(jnp.pi / a) * jnp.exp(-(2*jnp.pi)**2*(freqs-f0)**2 / (4*a)) * jnp.exp(X)
 
     return hp, hc
 
+# Project the signal to detectors
 def project_to_detector(detector, hp, hc, ra, dec, gmst_rad, psi):                   
     """Compute the response of the detector to incoming strain """
     return response[detector](jnp.atleast_2d(H1.freqs), hp, hc, ra, dec, gmst_rad, psi)
@@ -74,8 +91,9 @@ class LogL(object):
         self.times = H1.times
         self.df = H1.df
         self.times2d = jnp.atleast_2d(H1.times)
+        self.freqs2d = jnp.atleast_2d(H1.freqs)
         
-        self.hp, self.hc = simulate_fd_sine_gaussian_waveform(self.A, self.t0, self.f0, self.tau, H1.times, self.f_min, H1.df)
+        self.hp, self.hc = simulate_fd_sine_gaussian_waveform(self.A, self.t0, self.f0, self.tau, H1.freqs, self.f_min, H1.df)
         self.data = self.simulate_response(self.hp, self.hc, self.ra, self.dec, self.psi)
     
     def simulate_response(self, hp, hc, ra, dec, psi):
@@ -83,9 +101,10 @@ class LogL(object):
         return r
     
     def __call__(self, params):
-        hp, hc = simulate_fd_sine_gaussian_waveform(jnp.atleast_2d(params['A']).T, self.t0, self.f0, self.tau, self.times2d, self.f_min, self.df)
+        hp, hc = simulate_fd_sine_gaussian_waveform(jnp.atleast_2d(params['A']).T, self.t0, self.f0, self.tau, self.freqs2d, self.f_min, self.df)
        
         r = self.simulate_response(hp, hc, params['ra'], params['dec'], params['psi'])
+        #r = self.simulate_response(hp, hc, params['ra'], params['dec'], self.psi)
 
         residuals = jnp.array([r[ifo] - self.data[ifo] for ifo in self.detectors.keys()])
         
@@ -100,10 +119,16 @@ class LogL(object):
     def array_to_phys(self, x: Array) -> dict:
         
         p = dict()
-        p['A'] = x[:,0]
-        p['ra'] = x[:,1]*2*jnp.pi  #[0,2pi]
+        p['A'] = x[:,0]+0.1
+        
+        p['ra'] = x[:,1]*2*jnp.pi  #[0,2pi]#
+        #p['ra'] = x[:,1]  #[0,2pi]
+        
         p['dec'] = (x[:,2]-0.5)*jnp.pi  #[-pi/2,pi/2]
-        p['psi'] = (x[:,3]-0.5)*jnp.pi #[-pi/2,pi/2]
+        #p['dec'] = x[:,2] #[-pi/2,pi/2]
+        
+        p['psi'] = (x[:,3]-0.5)*jnp.pi #[-pi/2,pi/2] #change to 0 to pi
+        #p['psi'] = x[:,3] #[-pi/2,pi/2]
 
         return p
     
@@ -129,6 +154,7 @@ def sample_and_log_prob(prng_key: PRNGKey, n: int) -> Tuple[Any, Array]:
 def log_prob(x: Array) -> Array:
     p = log_l.array_to_phys(x)
     return log_l(p) + jnp.log(jnp.cos(p['dec']))
+    #return log_l(p)
 
 def loss_fn(params: hk.Params, prng_key: PRNGKey, n: int) -> Array:       #computes reverse KL-divergence for the sample x_flow between the flow and gw loglikelihood.
 
@@ -153,6 +179,8 @@ def update(
 
 
 if __name__ == '__main__':
+
+    run_name = sys.argv[1] #name of the run
 
    
     #Problem setup
@@ -182,7 +210,7 @@ if __name__ == '__main__':
     gps = lal.LIGOTimeGPS(true_params['t0'])
     gmst_rad = lal.GreenwichMeanSiderealTime(gps)
 
-    hp, hc = simulate_fd_sine_gaussian_waveform(true_params['A'], true_params['t0'], true_params['f0'], true_params['tau'], H1.times, f_min, H1.df)
+    hp, hc = simulate_fd_sine_gaussian_waveform(true_params['A'], true_params['t0'], true_params['f0'], true_params['tau'], H1.freqs, f_min, H1.df)
 
     L1.signal = L1_response(L1.freqs, hp, hc, true_params['ra'], true_params['dec'], gmst_rad, true_params['psi'])   
     H1.signal = H1_response(H1.freqs, hp, hc, true_params['ra'], true_params['dec'], gmst_rad, true_params['psi'])
@@ -201,7 +229,7 @@ if __name__ == '__main__':
     num_bins = 6
 
     #training parameters
-    epochs = 9000
+    epochs = 200
     Nsamps = 1000
 
     learning_rate = 0.01
@@ -236,7 +264,6 @@ if __name__ == '__main__':
             tepochs.set_postfix(ldict, refresh=True)
             params, opt_state = update(params, prng_key, opt_state)        #take a step in direction of stepest descent (negative gradient)
 
-            #print results every 100 iterations (first one is plotted after 1st update.)
             if (epoch)%500 == 0:
                 print(f'Epoch {epoch}, loss {loss}')
                 x_gen, log_prob_gen = sample_and_log_prob.apply(params, next(prng_seq), 10*Nsamps)
@@ -245,8 +272,19 @@ if __name__ == '__main__':
                 p_gen = np.vstack(list(log_l.array_to_phys(x_gen).values()))
                 data = np.concatenate([p_gen, [log_posterior]])
                 fig = corner.corner(data.T, labels=['A','ra','dec','psi', 'log_p'], truths = [0.5,0.5,0.5,0.5,0.])
-                pl.savefig(f'results/{epochs}/flow_{epoch}.png')
+                pl.savefig(f'results/{run_name}/flow_{epoch}.png')
                 pl.close()
+            
+            #if  epoch>20 and np.abs(np.log(loss)-np.log(training_stats['loss'][-2]))/np.log(training_stats['loss'][-2]) > 0.05: #bad step -- loss increases more than 10%
+            #    print(f'BAD STEP. Epoch {epoch}, loss {loss}')
+            #    x_gen, log_prob_gen = sample_and_log_prob.apply(params, next(prng_seq), 10*Nsamps)
+            #    log_posterior = log_prob(x_gen)
+            #    x_gen = np.array(x_gen, copy=False)
+             #   p_gen = np.vstack(list(log_l.array_to_phys(x_gen).values()))
+             #   data = np.concatenate([p_gen, [log_posterior]])
+             #   fig = corner.corner(data.T, labels=['A','ra','dec','psi', 'log_p'], truths = [0.5,0.5,0.5,0.5,0.])
+             #   pl.savefig(f'results/{run_name}/flow_{epoch}.png')
+              #  pl.close()
 
             #caculate variance from stochasticity alone
             #if (epoch+1)%1000 == 0:
@@ -278,17 +316,17 @@ if __name__ == '__main__':
     x_gen = np.array(x_gen, copy=False)
     p_gen = np.vstack(list(log_l.array_to_phys(x_gen).values()))
     fig = corner.corner(p_gen.T, truths = truths)
-    pl.savefig(f'results/{epochs}/posterior_{epochs}.png')
+    pl.savefig(f'results/{run_name}/posterior_{epochs}.png')
     pl.close()
 
     L=training_stats['loss'][:]
     pl.plot(np.log(L[:]))
     pl.xlabel("Iteration")
     pl.ylabel("Log(loss)")
-    pl.savefig(f'results/{epochs}/logloss_{epochs}.png')
+    pl.savefig(f'results/{run_name}/logloss_{epochs}.png')
     pl.close()
 
-    f = open(f'results/{epochs}/loss.npy', 'wb')
+    f = open(f'results/{run_name}/loss.npy', 'wb')
     np.save(f,np.array(L))
     f.close()
 
@@ -320,5 +358,5 @@ if __name__ == '__main__':
     kwargs["hist_kwargs"]["color"] = "C1"
     fig = corner.corner(p_gen.T, labels=log_l.params, truths = truths, fig=fig, **kwargs)
 
-    pl.savefig(f'results/{epochs}/posterior_comparison_{epochs}.png')
+    pl.savefig(f'results/{run_name}/posterior_comparison_{epochs}.png')
     pl.close()
